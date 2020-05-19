@@ -18,38 +18,46 @@ K = [0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
      0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
      0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2]
 
+import struct
 
 
 def rightRotate(n, d):
     return (n >> d) | (n << (32 - d)) & 0xFFFFFFFF
 
+
 def sig0(n):
     return (rightRotate(n, 7) ^ rightRotate(n, 18) ^ (n >> 3))
+
 
 def sig1(n):
     return (rightRotate(n, 17) ^ rightRotate(n, 19) ^ (n >> 10))
 
-def gam0(x):
-    return rightRotate(x, 7) ^ rightRotate(x, 18) ^ rightRotate(x, 3)
 
-def gam1(x):
-    return rightRotate(x, 17) ^ rightRotate(x, 19) ^ rightRotate(x, 10)
+def eps0(x):
+    return rightRotate(x, 2) ^ rightRotate(x, 13) ^ rightRotate(x, 22)
 
-def maj(a, b, c):
+
+def eps1(x):
+    return rightRotate(x, 6) ^ rightRotate(x, 11) ^ rightRotate(x, 25)
+
+
+def maj_f(a, b, c):
     return (a & b) ^ (a & c) ^ (b & c)
 
-def ch(e, f, g):
+
+def ch_f(e, f, g):
     return (e & f) ^ ((0xFFFFFFFF ^ e) & g)
 
 
 def padding(massage):
     l = len(massage)
     temp = bytes(massage.encode()) + bytes.fromhex("80")
-    padding = 64 - 8 - ((l + 1) % 64)
-    print(padding)
+
+    padding = 64 - ((l + 1 + 8) % 64)
+
     temp += padding * bytes.fromhex("00")
-    temp += (l).to_bytes(8, byteorder="big")
-    print(len(temp))
+    temp += (l * 8).to_bytes(8, byteorder="big")
+
     return temp
 
 
@@ -63,53 +71,58 @@ def hash(blocks):
         f = H[5]
         g = H[6]
         h = H[7]
-
         W = []
 
         for j in range(16):
-            W.append(i[j])
-        for j in range(16,64):
-            W.append(sig1(W[j-2]) + W[j-7] + sig0(W[j-15]) + W[j-16]) #tu moze byc blad
+            W.append(bytes(i[j * 4:(j + 1) * 4]))
+        for j in range(16, 64):
+            value = (sig1(int.from_bytes(W[j - 2], "big")) +
+                     int.from_bytes(W[j - 7], "big") +
+                     sig0(int.from_bytes(W[j - 15], "big"))
+                     + int.from_bytes(W[j - 16], "big")) & 0xFFFFFFFF
+            W.append(value.to_bytes(4, "big"))
 
         for j in range(64):
-            ch =0
-            maj =0
-            g0 = gam0(a)
-            g1 = gam1(e)
+            ch = ch_f(e, f, g)
+            maj = maj_f(a, b, c)
+            e0 = eps0(a)
+            e1 = eps1(e)
 
-            T1 = h + g1 + ch + K[j] + W[j]
-            T2 = g0 + maj
+            T1 = (h + e1 + ch + K[j] + int.from_bytes(W[j], "big")) & 0xFFFFFFFF
+            T2 = (e0 + maj) & 0xFFFFFFFF
             h = g
             g = f
             f = e
-            e = d + T1
+            e = (d + T1) & 0xFFFFFFFF
             d = c
             c = b
             b = a
-            a = T1 + T2
+            a = (T1 + T2) & 0xFFFFFFFF
 
-        H[0] += a
-        H[1] += b
-        H[2] += c
-        H[3] += d
-        H[4] += e
-        H[5] += f
-        H[6] += g
-        H[7] += h
+        H[0] = (a + H[0]) & 0xFFFFFFFF
+        H[1] = (b + H[1]) & 0xFFFFFFFF
+        H[2] = (c + H[2]) & 0xFFFFFFFF
+        H[3] = (d + H[3]) & 0xFFFFFFFF
+        H[4] = (e + H[4]) & 0xFFFFFFFF
+        H[5] = (f + H[5]) & 0xFFFFFFFF
+        H[6] = (g + H[6]) & 0xFFFFFFFF
+        H[7] = (h + H[7]) & 0xFFFFFFFF
 
-    result =""
+
+    result = ""
     for xd in H:
-        result += bytes(xd).hex()
+        result += xd.to_bytes(4, byteorder="big").hex()
 
     return result
 
 
 def main():
-    massage = "a"
+    massage = input("Text message to hash: ")
+    print()
     byte_massage = padding(massage)
     blocks = []
 
-    for i in range(0, len(byte_massage) - 64, 64):
+    for i in range(0, len(byte_massage), 64):
         blocks.append(byte_massage[i:i + 64])
 
     result = hash(blocks)
